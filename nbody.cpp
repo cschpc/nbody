@@ -1,3 +1,34 @@
+/*****************************************************************************
+MIT License
+
+Copyright (c) 2023 CSC HPC
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*******************************************************************************/
+
+/* Simple MPI and OpenMP parallel N-body simulation
+
+   Brute-force N^2 algorithm, MPI parallelization with nearest neighbour chain
+   Time integration with leap frog method
+*/
+
+
 #include <omp.h>
 #include <iostream>
 #include <vector>
@@ -37,7 +68,8 @@ struct Bodies
     my_positions_x.resize(n);
     my_positions_y.resize(n);
     my_positions_z.resize(n);
-    others_positions_x.resize(n);
+    // positions of neighbouring MPI task
+    others_positions_x.resize(n);  
     others_positions_y.resize(n);
     others_positions_z.resize(n);
     velocities_x.resize(n);
@@ -47,7 +79,6 @@ struct Bodies
     accelerations_y.resize(n);
     accelerations_z.resize(n);
   };
-
 
 };
 
@@ -352,7 +383,7 @@ int main(int argc, char** argv)
       std::cout << "Energy in the end:       " << e << std::endl;
 
   // print reference and timing 
-  auto v_ave = average_velocity(bodies);
+  auto v_ave = average_velocity(bodies) / nbodies;
   if (0 == rank) {
       std::cout << "Average velocity: " << v_ave << std::endl;
       std::cout << "Time: " << t1 - t0 << " s" << std::endl;
