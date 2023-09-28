@@ -270,6 +270,7 @@ Timing simulate(Bodies<T> &bodies, int niters)
   // Leap-frog integration
   const T dt = 0.2;
 
+  MPI_Request reqs[8];
   int ntasks;
   int rank;
   MPI_Comm_size(MPI_COMM_WORLD, &ntasks);
@@ -279,6 +280,16 @@ Timing simulate(Bodies<T> &bodies, int niters)
   int src = (rank - 1 + ntasks) % ntasks;
 
   size_t nbodies = bodies.nbodies;
+  // Receive buffers for MPI 
+  vector<T> recv_x;
+  vector<T> recv_y;
+  vector<T> recv_z;
+  vector<T> recv_m;
+
+  recv_x.resize(nbodies);
+  recv_y.resize(nbodies);
+  recv_z.resize(nbodies);
+  recv_m.resize(nbodies);
 
   #pragma omp parallel
   for (int n=0; n < niters; n++) {
@@ -319,6 +330,31 @@ Timing simulate(Bodies<T> &bodies, int niters)
     }
 
     for (int nblock = 0; nblock < ntasks; nblock++) {
+      #pragma omp master
+      t0 = MPI_Wtime();
+
+      // init receives and sends
+      #pragma omp master
+      if (nblock < ntasks - 1) {
+        MPI_Irecv(recv_x.data(), nbodies, MPI_DOUBLE, src, 1, MPI_COMM_WORLD, &reqs[0]);
+        MPI_Irecv(recv_y.data(), nbodies, MPI_DOUBLE, src, 1, MPI_COMM_WORLD, &reqs[1]);
+        MPI_Irecv(recv_z.data(), nbodies, MPI_DOUBLE, src, 1, MPI_COMM_WORLD, &reqs[2]);
+        MPI_Irecv(recv_m.data(), nbodies, MPI_DOUBLE, src, 1, MPI_COMM_WORLD, &reqs[2]);
+        MPI_Isend(bodies.others_positions_x.data(), nbodies, MPI_DOUBLE, 
+                  dst, 1, MPI_COMM_WORLD, &reqs[3]);
+        MPI_Isend(bodies.others_positions_y.data(), nbodies, MPI_DOUBLE, 
+                  dst, 1, MPI_COMM_WORLD, &reqs[4]);
+        MPI_Isend(bodies.others_positions_z.data(), nbodies, MPI_DOUBLE, 
+                  dst, 1, MPI_COMM_WORLD, &reqs[5]);
+        MPI_Isend(bodies.others_masses.data(), nbodies, MPI_DOUBLE, 
+                  dst, 1, MPI_COMM_WORLD, &reqs[5]);
+      }
+
+      #pragma omp master
+      {
+        t1 = MPI_Wtime();
+        timing.mpi_time += t1 - t0;
+      }
 
       #pragma omp master
       t0 = MPI_Wtime();
@@ -351,17 +387,14 @@ Timing simulate(Bodies<T> &bodies, int niters)
 
       #pragma omp master
       t0 = MPI_Wtime();
-      // communication
+      // finalize communication
       #pragma omp master
       if (nblock < ntasks - 1){
-         MPI_Sendrecv_replace(bodies.others_positions_x.data(), nbodies, MPI_DOUBLE,
-                              dst, 1, src, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-         MPI_Sendrecv_replace(bodies.others_positions_y.data(), nbodies, MPI_DOUBLE,
-                              dst, 1, src, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-         MPI_Sendrecv_replace(bodies.others_positions_z.data(), nbodies, MPI_DOUBLE,
-                              dst, 1, src, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-         MPI_Sendrecv_replace(bodies.others_masses.data(), nbodies, MPI_DOUBLE,
-                              dst, 1, src, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Waitall(6, reqs, MPI_STATUSES_IGNORE);
+        std::swap(recv_x, bodies.others_positions_x);
+        std::swap(recv_y, bodies.others_positions_y);
+        std::swap(recv_z, bodies.others_positions_z);
+        std::swap(recv_m, bodies.others_masses);
       }
       #pragma omp master
       {
